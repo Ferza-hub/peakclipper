@@ -2,6 +2,7 @@ export interface UserPrefs {
   onboardingComplete: boolean;
   role: "creator" | "agency" | null;
   name: string;
+  email: string;
   // Creator
   mainPlatform: string;
   contentNiche: string;
@@ -17,6 +18,7 @@ const defaults: UserPrefs = {
   onboardingComplete: false,
   role: null,
   name: "",
+  email: "",
   mainPlatform: "",
   contentNiche: "",
   agencyName: "",

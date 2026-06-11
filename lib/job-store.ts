@@ -41,6 +41,7 @@ export interface GenerateSettings {
 export interface Job {
   id: string;
   url: string;
+  displayTitle?: string;
   status: JobStatus;
   progress: number;
   currentStep: string;
@@ -92,4 +93,8 @@ export function getAllJobs(): Job[] {
 export function updateJob(id: string, updates: Partial<Job>): void {
   const job = jobs.get(id);
   if (job) jobs.set(id, { ...job, ...updates });
+}
+
+export function deleteJob(id: string): boolean {
+  return jobs.delete(id);
 }

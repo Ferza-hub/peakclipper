@@ -13,6 +13,7 @@ export async function GET() {
   const jobs = getAllJobs().map((j) => ({
     id: j.id,
     url: j.url,
+    displayTitle: j.displayTitle,
     status: j.status,
     progress: j.progress,
     currentStep: j.currentStep,
