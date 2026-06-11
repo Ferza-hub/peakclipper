@@ -298,9 +298,7 @@ function DashboardContent() {
     setPrefs(getUserPrefs());
   }, []);
 
-  if (!prefs) return null;
-
-  // Poll jobs list every 2 seconds
+  // Poll jobs list every 2 seconds — must be before any early return (Rules of Hooks)
   React.useEffect(() => {
     const fetchJobs = async () => {
       try {
@@ -312,6 +310,8 @@ function DashboardContent() {
     const interval = setInterval(fetchJobs, 2000);
     return () => clearInterval(interval);
   }, []);
+
+  if (!prefs) return null;
 
   const handleGenerate = (url: string) => {
     setActiveUrl(url);
