@@ -8,6 +8,101 @@ import { mergeShortSegments, parseVTT, parseSRT } from "./subtitle-parser";
 
 const TMP_DIR = "/tmp/peakclipper";
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function checkBinaries(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const proc = spawn("yt-dlp", ["--version"]);
+    proc.on("error", (err) => resolve((err as NodeJS.ErrnoException).code !== "ENOENT"));
+    proc.on("close", () => resolve(true));
+  });
+}
+
+const DEMO_CLIPS_DATA = [
+  {
+    title: "The mindset shift that separates 7-figure creators from everyone else",
+    transcript: "Most people think growing an audience is about posting more content. The real secret? Consistency isn't about volume — it's about creating a content system that compounds over time. Here's exactly what changed when I shifted my strategy.",
+  },
+  {
+    title: "Why 90% of people quit before they see results (and how to be the 10%)",
+    transcript: "The number one reason people don't succeed online isn't lack of talent or resources. It's the gap between expectation and reality in the first 90 days. I call it the 'trough of disillusionment' and once you understand it, you can push through it.",
+  },
+  {
+    title: "This simple framework 10x'd my content output without burning out",
+    transcript: "I used to spend 8 hours on a single video. Now I batch three in the same time. The secret is the Content Pillar Framework — you pick 5 core topics and you never run out of ideas again. Let me walk you through exactly how it works.",
+  },
+  {
+    title: "The uncomfortable truth about algorithm-chasing (and what works instead)",
+    transcript: "Every time the algorithm changes, half the creators I know panic and pivot. But the channels that consistently grow? They ignored the algorithm and focused on one thing: being genuinely useful to a specific person. Here's the strategy.",
+  },
+  {
+    title: "How to turn one long-form video into 30 pieces of content",
+    transcript: "This is the content repurposing system that every top creator uses but nobody talks about. You start with one anchor piece — a podcast, interview, or long video — and extract clips, quotes, carousels, threads, and blog posts from it. One hour of recording, 30 days of content.",
+  },
+];
+
+async function runDemoMode(job: Job): Promise<void> {
+  const { id, url } = job;
+
+  updateJob(id, { status: "fetching_info", progress: 8, currentStep: "Fetching video info…" });
+  await sleep(1000);
+
+  const demoTitle = (() => {
+    try {
+      const host = new URL(url).hostname.replace("www.", "");
+      if (host.includes("youtube")) return "How to Build a Viral Content Strategy in 2024";
+    } catch { /* not a URL */ }
+    const base = url.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "Demo Video";
+    return base.length > 4 ? base : "Demo Video — Full Walkthrough";
+  })();
+
+  updateJob(id, {
+    videoInfo: { title: demoTitle, duration: 1847, thumbnail: "", channel: "Demo Channel", url },
+    status: "downloading",
+    progress: 12,
+    currentStep: "Downloading video…",
+  });
+
+  for (let p = 12; p <= 55; p += 3) {
+    updateJob(id, { progress: p });
+    await sleep(110);
+  }
+
+  updateJob(id, { status: "extracting_transcript", progress: 57, currentStep: "Extracting transcript…" });
+  await sleep(900);
+
+  updateJob(id, { status: "analyzing", progress: 66, currentStep: "Finding best moments…" });
+  await sleep(700);
+
+  const count = DEMO_CLIPS_DATA.length;
+  updateJob(id, { status: "clipping", progress: 72, currentStep: `Generating ${count} clips…` });
+
+  const clips: Clip[] = [];
+  for (let i = 0; i < count; i++) {
+    await sleep(450);
+    const c = DEMO_CLIPS_DATA[i];
+    const startTime = 60 + i * 320;
+    const duration = 45 + (i % 3) * 10;
+    clips.push({
+      id: `${id}_demo${i}`,
+      jobId: id,
+      title: c.title,
+      startTime,
+      endTime: startTime + duration,
+      duration,
+      score: 95 - i * 8,
+      transcript: c.transcript,
+    });
+    updateJob(id, {
+      progress: 72 + (i + 1) * 5,
+      clips: [...clips],
+      currentStep: `Clipped ${i + 1}/${count}…`,
+    });
+  }
+
+  updateJob(id, { status: "done", progress: 100, currentStep: "Done!", clips });
+}
+
 async function ensureDirs() {
   await fs.mkdir(`${TMP_DIR}/downloads`, { recursive: true });
   await fs.mkdir(`${TMP_DIR}/clips`, { recursive: true });
@@ -119,6 +214,10 @@ async function readSubtitleFile(filePath: string): Promise<string> {
 }
 
 export async function processVideo(job: Job): Promise<void> {
+  if (!(await checkBinaries())) {
+    return runDemoMode(job);
+  }
+
   const { id, url, settings, localFilePath } = job;
 
   await ensureDirs();

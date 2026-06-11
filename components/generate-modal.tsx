@@ -411,6 +411,9 @@ interface ResultsStepProps {
 
 function ResultsStep({ clips, onClose, onNewVideo }: ResultsStepProps) {
   const [playing, setPlaying] = React.useState<string | null>(null);
+  const [videoErrors, setVideoErrors] = React.useState<Set<string>>(new Set());
+
+  const isDemo = clips.some((c) => c.id.includes("_demo"));
 
   return (
     <div className="flex flex-col overflow-hidden" style={{ maxHeight: "calc(90vh - 140px)" }}>
@@ -418,14 +421,18 @@ function ResultsStep({ clips, onClose, onNewVideo }: ResultsStepProps) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold text-[#0f172a]">{clips.length} clips ready</p>
-            <p className="text-xs text-[#94a3b8]">Sorted by engagement score</p>
+            <p className="text-xs text-[#94a3b8]">
+              {isDemo ? "Demo mode — real processing requires yt-dlp + ffmpeg" : "Sorted by engagement score"}
+            </p>
           </div>
-          <Button variant="outline" size="sm" asChild>
-            <a href="#" onClick={(e) => e.preventDefault()}>
-              <Download size={14} />
-              Download all
-            </a>
-          </Button>
+          {!isDemo && (
+            <Button variant="outline" size="sm" asChild>
+              <a href="#" onClick={(e) => e.preventDefault()}>
+                <Download size={14} />
+                Download all
+              </a>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -433,13 +440,24 @@ function ResultsStep({ clips, onClose, onNewVideo }: ResultsStepProps) {
         {clips.map((clip) => (
           <div key={clip.id} className="rounded-xl border border-[#e2e8f0] overflow-hidden hover:border-[#c7d2fe] transition-colors">
             {playing === clip.id && (
-              <video
-                src={`/api/clips/${clip.id}/video`}
-                controls
-                autoPlay
-                className="w-full aspect-video bg-black"
-                onEnded={() => setPlaying(null)}
-              />
+              <div className="relative">
+                <video
+                  src={`/api/clips/${clip.id}/video`}
+                  controls
+                  autoPlay
+                  className="w-full aspect-video bg-black"
+                  onEnded={() => setPlaying(null)}
+                  onError={() => setVideoErrors((p) => new Set([...p, clip.id]))}
+                />
+                {videoErrors.has(clip.id) && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0f172a] gap-2">
+                    <Scissors size={22} className="text-white/25" />
+                    <p className="text-xs text-white/40 text-center px-4">
+                      Demo mode — video preview requires ffmpeg on the server
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
             <div className="flex gap-3 p-3">
               {playing !== clip.id && (
@@ -466,12 +484,19 @@ function ResultsStep({ clips, onClose, onNewVideo }: ResultsStepProps) {
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setPlaying(playing === clip.id ? null : clip.id)}>
                     {playing === clip.id ? "Stop" : "Preview"}
                   </Button>
-                  <Button size="sm" className="h-7 text-xs gap-1" asChild>
-                    <a href={`/api/clips/${clip.id}/video`} download={`clip-${clip.id}.mp4`}>
+                  {isDemo ? (
+                    <Button size="sm" className="h-7 text-xs gap-1 opacity-40 cursor-not-allowed" disabled>
                       <Download size={11} />
-                      Download
-                    </a>
-                  </Button>
+                      Demo
+                    </Button>
+                  ) : (
+                    <Button size="sm" className="h-7 text-xs gap-1" asChild>
+                      <a href={`/api/clips/${clip.id}/video`} download={`clip-${clip.id}.mp4`}>
+                        <Download size={11} />
+                        Download
+                      </a>
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>

@@ -14,7 +14,7 @@ export interface Clip {
   endTime: number;
   duration: number;
   score: number;
-  filePath: string;
+  filePath?: string;
   transcript: string;
 }
 

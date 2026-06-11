@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 function findClipPath(clipId: string): string | null {
   for (const job of getAllJobs()) {
     const clip = job.clips?.find((c) => c.id === clipId);
-    if (clip) return clip.filePath;
+    if (clip) return clip.filePath ?? null;
   }
   return null;
 }
