@@ -1,16 +1,20 @@
 "use client";
 
 import { GenerateModal } from "@/components/generate-modal";
+import { OnboardingGuard } from "@/components/onboarding-guard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { getUserPrefs, type UserPrefs } from "@/lib/user-prefs";
 import { cn } from "@/lib/utils";
 import {
+  Building2,
   Download,
   Loader2,
   Play,
   Scissors,
   Sparkles,
   Upload,
+  Zap,
 } from "lucide-react";
 import * as React from "react";
 
@@ -116,7 +120,19 @@ function JobCard({ job, onOpen }: { job: JobSummary; onOpen: (id: string) => voi
   );
 }
 
-function Navbar() {
+const PLAN_LABELS: Record<string, { label: string; color: string }> = {
+  starter: { label: "Starter", color: "bg-blue-100 text-blue-700" },
+  pro: { label: "Pro", color: "bg-violet-100 text-violet-700" },
+  scale: { label: "Scale", color: "bg-amber-100 text-amber-700" },
+};
+
+function Navbar({ prefs }: { prefs: UserPrefs }) {
+  const isAgency = prefs.role === "agency";
+  const planInfo = prefs.plan ? PLAN_LABELS[prefs.plan] : null;
+  const initials = (prefs.name || prefs.agencyName || "U")
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
     <header className="sticky top-0 z-30 border-b border-[#e2e8f0] bg-white/80 backdrop-blur-md">
       <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-3">
@@ -126,13 +142,32 @@ function Navbar() {
           </div>
           <span className="text-base font-bold tracking-tight text-[#0f172a]">PeakClipper</span>
         </div>
+
         <nav className="hidden items-center gap-6 sm:flex">
           <a href="#" className="text-sm font-medium text-[#0f172a]">Clips</a>
+          {isAgency && (
+            <a href="#" className="text-sm text-[#94a3b8] hover:text-[#0f172a] transition-colors">Clients</a>
+          )}
           <a href="#" className="text-sm text-[#94a3b8] hover:text-[#0f172a] transition-colors">Templates</a>
           <a href="#" className="text-sm text-[#94a3b8] hover:text-[#0f172a] transition-colors">Analytics</a>
         </nav>
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#7c3aed] to-[#a78bfa] text-xs font-bold text-white">
-          F
+
+        <div className="flex items-center gap-2">
+          {isAgency && planInfo && (
+            <span className={cn("hidden sm:inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold", planInfo.color)}>
+              <Zap size={10} />
+              {planInfo.label}
+            </span>
+          )}
+          {isAgency && (
+            <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-[#e2e8f0] px-2.5 py-1 text-xs text-[#64748b]">
+              <Building2 size={11} />
+              {prefs.agencyName || "Agency"}
+            </div>
+          )}
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#7c3aed] to-[#a78bfa] text-xs font-bold text-white">
+            {initials}
+          </div>
         </div>
       </div>
     </header>
@@ -251,12 +286,19 @@ function EmptyState({ onUpload }: { onUpload: () => void }) {
   );
 }
 
-export default function HomePage() {
+function DashboardContent() {
+  const [prefs, setPrefs] = React.useState<UserPrefs | null>(null);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [activeUrl, setActiveUrl] = React.useState("");
   const [uploadedFile, setUploadedFile] = React.useState<File | null>(null);
   const [jobs, setJobs] = React.useState<JobSummary[]>([]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    setPrefs(getUserPrefs());
+  }, []);
+
+  if (!prefs) return null;
 
   // Poll jobs list every 2 seconds
   React.useEffect(() => {
@@ -290,15 +332,23 @@ export default function HomePage() {
   const processingJobs = jobs.filter((j) => !["done", "error"].includes(j.status));
   const doneJobs = jobs.filter((j) => j.status === "done" || j.status === "error");
 
+  const isAgency = prefs.role === "agency";
+  const greeting = prefs.name || prefs.agencyName || "";
+
   return (
     <div className="min-h-screen bg-[#f8fafc]">
-      <Navbar />
+      <Navbar prefs={prefs} />
       <main className="mx-auto max-w-3xl px-6 py-10">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-[#0f172a]">Your clips</h1>
+          <h1 className="text-2xl font-bold text-[#0f172a]">
+            {isAgency ? "Client clips" : "Your clips"}
+          </h1>
           <p className="mt-1 text-sm text-[#94a3b8]">
+            {greeting && `Hi ${greeting} · `}
             {jobs.length > 0
               ? `${doneJobs.reduce((s, j) => s + j.clipCount, 0)} clips from ${jobs.length} video${jobs.length !== 1 ? "s" : ""}`
+              : isAgency
+              ? "Upload a client's video or paste a link to get started"
               : "Paste a URL or upload a video to get started"}
           </p>
         </div>
@@ -355,5 +405,13 @@ export default function HomePage() {
         uploadedFile={uploadedFile}
       />
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <OnboardingGuard>
+      <DashboardContent />
+    </OnboardingGuard>
   );
 }
