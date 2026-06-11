@@ -41,23 +41,44 @@ const DEMO_CLIPS_DATA = [
   },
 ];
 
+const DEMO_TITLES_POOL = [
+  "How I Grew from 0 to 100K Subscribers in 12 Months",
+  "The Content Strategy That Actually Works in 2024",
+  "Why Most Creators Quit (And How to Be the 10% Who Don't)",
+  "Behind the Scenes: My Full Content Creation Process",
+  "5 Lessons from Building a 7-Figure Creator Business",
+];
+
+function demoTitleFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const pathParts = parsed.pathname.split("/").filter(Boolean);
+    const lastPart = pathParts[pathParts.length - 1]
+      ?.replace(/[-_]/g, " ")
+      ?.replace(/\.[^.]+$/, "")
+      ?.replace(/\b\w/g, (c) => c.toUpperCase());
+    if (lastPart && lastPart.length > 8 && lastPart.length < 80) return lastPart;
+    const host = parsed.hostname.replace("www.", "");
+    if (host && !host.includes("youtube") && !host.includes("youtu.be")) {
+      return `Video from ${host.charAt(0).toUpperCase() + host.slice(1)}`;
+    }
+  } catch { /* not a URL */ }
+  const base = url.split("/").pop()?.replace(/\.[^.]+$/, "")?.replace(/[-_]/g, " ");
+  if (base && base.length > 4 && base.length < 80) {
+    return base.charAt(0).toUpperCase() + base.slice(1);
+  }
+  const hash = url.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  return DEMO_TITLES_POOL[hash % DEMO_TITLES_POOL.length];
+}
+
 async function runDemoMode(job: Job): Promise<void> {
   const { id, url } = job;
 
   updateJob(id, { status: "fetching_info", progress: 8, currentStep: "Fetching video info…" });
   await sleep(1000);
 
-  const demoTitle = (() => {
-    try {
-      const host = new URL(url).hostname.replace("www.", "");
-      if (host.includes("youtube")) return "How to Build a Viral Content Strategy in 2024";
-    } catch { /* not a URL */ }
-    const base = url.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "Demo Video";
-    return base.length > 4 ? base : "Demo Video — Full Walkthrough";
-  })();
-
   updateJob(id, {
-    videoInfo: { title: demoTitle, duration: 1847, thumbnail: "", channel: "Demo Channel", url },
+    videoInfo: { title: demoTitleFromUrl(url), duration: 1847, thumbnail: "", channel: "Demo", url },
     status: "downloading",
     progress: 12,
     currentStep: "Downloading video…",

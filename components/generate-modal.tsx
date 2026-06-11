@@ -409,6 +409,40 @@ interface ResultsStepProps {
   onNewVideo: () => void;
 }
 
+const WAVEFORM = [30, 55, 40, 75, 45, 85, 60, 90, 50, 70, 40, 80, 55, 65, 45, 75, 35, 85, 60, 50, 70, 40, 55, 65, 45, 80, 55, 40, 70, 60];
+
+function DemoPreviewCard({ clip }: { clip: { title: string; duration: number } }) {
+  return (
+    <div className="relative w-full aspect-video bg-gradient-to-br from-[#1e1b4b] via-[#2d2a70] to-[#0f172a] flex flex-col">
+      <div className="absolute top-3 right-3">
+        <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-white/50">
+          Demo
+        </span>
+      </div>
+      <div className="flex flex-1 flex-col items-center justify-center gap-4">
+        <div className="flex items-end gap-[3px] h-10 px-8">
+          {WAVEFORM.map((h, i) => (
+            <div key={i} className="w-1.5 rounded-full bg-[#7c3aed]/50" style={{ height: `${h}%` }} />
+          ))}
+        </div>
+        <div className="w-full px-6">
+          <div className="h-0.5 w-full rounded-full bg-white/10">
+            <div className="h-full w-1/3 rounded-full bg-[#7c3aed]" />
+          </div>
+          <div className="mt-1 flex justify-between text-[10px] text-white/30">
+            <span>0:18</span>
+            <span>{formatDuration(clip.duration)}</span>
+          </div>
+        </div>
+      </div>
+      <div className="px-4 pb-3">
+        <p className="line-clamp-1 text-xs font-semibold text-white/70">{clip.title}</p>
+        <p className="mt-0.5 text-[10px] text-white/30">Preview available on self-hosted deployment</p>
+      </div>
+    </div>
+  );
+}
+
 function ResultsStep({ clips, onClose, onNewVideo }: ResultsStepProps) {
   const [playing, setPlaying] = React.useState<string | null>(null);
   const [videoErrors, setVideoErrors] = React.useState<Set<string>>(new Set());
@@ -422,7 +456,7 @@ function ResultsStep({ clips, onClose, onNewVideo }: ResultsStepProps) {
           <div>
             <p className="text-sm font-semibold text-[#0f172a]">{clips.length} clips ready</p>
             <p className="text-xs text-[#94a3b8]">
-              {isDemo ? "Demo mode — real processing requires yt-dlp + ffmpeg" : "Sorted by engagement score"}
+              {isDemo ? "Demo mode — deploy with yt-dlp + ffmpeg for real clips" : "Sorted by engagement score"}
             </p>
           </div>
           {!isDemo && (
@@ -440,24 +474,26 @@ function ResultsStep({ clips, onClose, onNewVideo }: ResultsStepProps) {
         {clips.map((clip) => (
           <div key={clip.id} className="rounded-xl border border-[#e2e8f0] overflow-hidden hover:border-[#c7d2fe] transition-colors">
             {playing === clip.id && (
-              <div className="relative">
-                <video
-                  src={`/api/clips/${clip.id}/video`}
-                  controls
-                  autoPlay
-                  className="w-full aspect-video bg-black"
-                  onEnded={() => setPlaying(null)}
-                  onError={() => setVideoErrors((p) => new Set([...p, clip.id]))}
-                />
-                {videoErrors.has(clip.id) && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0f172a] gap-2">
-                    <Scissors size={22} className="text-white/25" />
-                    <p className="text-xs text-white/40 text-center px-4">
-                      Demo mode — video preview requires ffmpeg on the server
-                    </p>
-                  </div>
-                )}
-              </div>
+              isDemo ? (
+                <DemoPreviewCard clip={clip} />
+              ) : (
+                <div className="relative">
+                  <video
+                    src={`/api/clips/${clip.id}/video`}
+                    controls
+                    autoPlay
+                    className="w-full aspect-video bg-black"
+                    onEnded={() => setPlaying(null)}
+                    onError={() => setVideoErrors((p) => new Set([...p, clip.id]))}
+                  />
+                  {videoErrors.has(clip.id) && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0f172a] gap-2">
+                      <Scissors size={22} className="text-white/25" />
+                      <p className="text-xs text-white/40 text-center px-4">Video file not found</p>
+                    </div>
+                  )}
+                </div>
+              )
             )}
             <div className="flex gap-3 p-3">
               {playing !== clip.id && (

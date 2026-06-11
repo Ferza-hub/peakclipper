@@ -144,12 +144,12 @@ function Navbar({ prefs }: { prefs: UserPrefs }) {
         </div>
 
         <nav className="hidden items-center gap-6 sm:flex">
-          <a href="#" className="text-sm font-medium text-[#0f172a]">Clips</a>
+          <a href="/" className="text-sm font-medium text-[#0f172a]">Clips</a>
           {isAgency && (
-            <a href="#" className="text-sm text-[#94a3b8] hover:text-[#0f172a] transition-colors">Clients</a>
+            <a href="/clients" className="text-sm text-[#94a3b8] hover:text-[#0f172a] transition-colors">Clients</a>
           )}
-          <a href="#" className="text-sm text-[#94a3b8] hover:text-[#0f172a] transition-colors">Templates</a>
-          <a href="#" className="text-sm text-[#94a3b8] hover:text-[#0f172a] transition-colors">Analytics</a>
+          <a href="/templates" className="text-sm text-[#94a3b8] hover:text-[#0f172a] transition-colors">Templates</a>
+          <a href="/analytics" className="text-sm text-[#94a3b8] hover:text-[#0f172a] transition-colors">Analytics</a>
         </nav>
 
         <div className="flex items-center gap-2">
