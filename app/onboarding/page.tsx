@@ -8,18 +8,13 @@ import {
   Scissors,
   Sparkles,
   Users,
-  Video,
   Zap,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
 type Role = "creator" | "agency";
-type Step =
-  | "role"
-  | "creator-profile"
-  | "agency-info"
-  | "agency-plan";
+type Step = "role" | "creator-profile" | "agency-info";
 
 const PLATFORMS = [
   { value: "youtube", label: "YouTube", emoji: "▶️" },
@@ -30,70 +25,6 @@ const PLATFORMS = [
 ];
 
 const TEAM_SIZES = ["1–3", "4–10", "11–30", "30+"];
-
-interface Plan {
-  id: "starter" | "pro" | "scale";
-  name: string;
-  price: string;
-  period: string;
-  description: string;
-  highlight: boolean;
-  features: string[];
-  cta: string;
-}
-
-const PLANS: Plan[] = [
-  {
-    id: "starter",
-    name: "Starter",
-    price: "$29",
-    period: "/month",
-    description: "Perfect for small agencies just getting started",
-    highlight: false,
-    features: [
-      "50 clips / month",
-      "Up to 3 creators",
-      "All caption styles",
-      "MP4 & 9:16 export",
-      "Email support",
-    ],
-    cta: "Start free trial",
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    price: "$79",
-    period: "/month",
-    description: "For growing agencies managing multiple clients",
-    highlight: true,
-    features: [
-      "200 clips / month",
-      "Up to 10 creators",
-      "White-label exports",
-      "Priority processing",
-      "Bulk download",
-      "Priority support",
-    ],
-    cta: "Start free trial",
-  },
-  {
-    id: "scale",
-    name: "Scale",
-    price: "Custom",
-    period: "",
-    description: "Enterprise-grade for large agencies",
-    highlight: false,
-    features: [
-      "Unlimited clips",
-      "Unlimited creators",
-      "API access",
-      "CRM integrations",
-      "Dedicated account manager",
-      "SLA guarantee",
-    ],
-    cta: "Contact sales",
-  },
-];
 
 function StepDots({ current }: { current: number; total: number }) {
   return (
@@ -138,9 +69,9 @@ function RoleStep({ onSelect }: { onSelect: (r: Role) => void }) {
           {
             role: "agency" as Role,
             icon: "🏢",
-            title: "Agency",
-            desc: "I create clips for multiple clients",
-            sub: "Plans from $29/mo",
+            title: "Business",
+            desc: "I manage content for clients or a team",
+            sub: "Multi-client workflow",
           },
         ].map((item) => (
           <button
@@ -255,14 +186,14 @@ function AgencyInfoStep({
 
   return (
     <div className="flex flex-col w-full max-w-sm">
-      <StepDots current={2} total={3} />
-      <h2 className="text-xl font-bold text-[#0f172a] mb-1">Tell us about your agency</h2>
-      <p className="text-sm text-[#64748b] mb-8">We'll tailor the right plan for your team.</p>
+      <StepDots current={2} total={2} />
+      <h2 className="text-xl font-bold text-[#0f172a] mb-1">Tell us about your business</h2>
+      <p className="text-sm text-[#64748b] mb-8">Help us personalize your workspace for your team.</p>
 
       <div className="space-y-5">
         <div>
           <label className="block text-sm font-medium text-[#0f172a] mb-1.5">
-            Agency name
+            Business / agency name
           </label>
           <input
             type="text"
@@ -301,89 +232,9 @@ function AgencyInfoStep({
         disabled={!agencyName.trim() || !teamSize}
         className="mt-8 flex items-center justify-center gap-2 rounded-xl bg-[#0f172a] px-6 py-3 text-sm font-semibold text-white hover:bg-[#1e293b] disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
       >
-        View plans
+        Get started
         <ArrowRight size={15} />
       </button>
-    </div>
-  );
-}
-
-function AgencyPlanStep({
-  agencyName,
-  onSelect,
-}: {
-  agencyName: string;
-  onSelect: (plan: "starter" | "pro" | "scale") => void;
-}) {
-  return (
-    <div className="flex flex-col items-center w-full max-w-3xl">
-      <StepDots current={3} total={3} />
-      <h2 className="text-xl font-bold text-[#0f172a] mb-1 self-start">
-        Choose a plan for{" "}
-        <span className="text-[#7c3aed]">{agencyName || "your agency"}</span>
-      </h2>
-      <p className="text-sm text-[#64748b] mb-8 self-start">
-        All plans include a 14-day free trial. No credit card required.
-      </p>
-
-      <div className="grid grid-cols-3 gap-4 w-full">
-        {PLANS.map((plan) => (
-          <div
-            key={plan.id}
-            className={cn(
-              "relative flex flex-col rounded-2xl border-2 p-5 transition-all",
-              plan.highlight
-                ? "border-[#7c3aed] bg-white shadow-xl shadow-violet-100"
-                : "border-[#e2e8f0] bg-white"
-            )}
-          >
-            {plan.highlight && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <span className="inline-flex items-center gap-1 rounded-full bg-[#7c3aed] px-3 py-1 text-xs font-semibold text-white shadow">
-                  <Sparkles size={10} />
-                  Most popular
-                </span>
-              </div>
-            )}
-
-            <div className="mb-4">
-              <p className="font-semibold text-[#0f172a]">{plan.name}</p>
-              <div className="mt-2 flex items-baseline gap-0.5">
-                <span className="text-2xl font-bold text-[#0f172a]">{plan.price}</span>
-                {plan.period && (
-                  <span className="text-sm text-[#94a3b8]">{plan.period}</span>
-                )}
-              </div>
-              <p className="mt-1.5 text-xs text-[#64748b] leading-relaxed">{plan.description}</p>
-            </div>
-
-            <ul className="flex-1 space-y-2 mb-5">
-              {plan.features.map((f) => (
-                <li key={f} className="flex items-start gap-2 text-xs text-[#475569]">
-                  <Check size={13} className="mt-0.5 flex-shrink-0 text-[#7c3aed]" />
-                  {f}
-                </li>
-              ))}
-            </ul>
-
-            <button
-              onClick={() => onSelect(plan.id)}
-              className={cn(
-                "w-full rounded-xl py-2.5 text-sm font-semibold transition-all cursor-pointer",
-                plan.highlight
-                  ? "bg-[#7c3aed] text-white hover:bg-[#6d28d9]"
-                  : "border border-[#e2e8f0] text-[#0f172a] hover:bg-[#f8fafc]"
-              )}
-            >
-              {plan.cta}
-            </button>
-          </div>
-        ))}
-      </div>
-
-      <p className="mt-5 text-xs text-[#94a3b8]">
-        You can change or cancel your plan anytime from settings.
-      </p>
     </div>
   );
 }
@@ -391,11 +242,8 @@ function AgencyPlanStep({
 export default function OnboardingPage() {
   const router = useRouter();
   const [step, setStep] = React.useState<Step>("role");
-  const [role, setRole] = React.useState<Role | null>(null);
-  const [agencyName, setAgencyName] = React.useState("");
 
   const handleRoleSelect = (r: Role) => {
-    setRole(r);
     setStep(r === "creator" ? "creator-profile" : "agency-info");
   };
 
@@ -412,22 +260,12 @@ export default function OnboardingPage() {
   };
 
   const handleAgencyInfo = (name: string, teamSize: string) => {
-    setAgencyName(name);
-    setUserPrefs({ role: "agency", agencyName: name, teamSize });
-    setStep("agency-plan");
-  };
-
-  const handlePlanSelect = (plan: "starter" | "pro" | "scale") => {
-    setUserPrefs({ onboardingComplete: true, plan });
+    setUserPrefs({ onboardingComplete: true, role: "agency", agencyName: name, teamSize, plan: null });
     router.push("/");
   };
 
-  const maxWidth =
-    step === "agency-plan" ? "max-w-3xl" : "max-w-md";
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#faf8ff] via-white to-[#f0fdf4] flex flex-col">
-      {/* Top bar */}
       <header className="flex items-center justify-between px-8 py-5">
         <div className="flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#7c3aed]">
@@ -435,7 +273,6 @@ export default function OnboardingPage() {
           </div>
           <span className="text-sm font-bold text-[#0f172a]">PeakClipper</span>
         </div>
-
         {step !== "role" && (
           <button
             onClick={() => router.push("/")}
@@ -446,21 +283,14 @@ export default function OnboardingPage() {
         )}
       </header>
 
-      {/* Main content */}
-      <main className={cn("flex flex-1 items-center justify-center px-6 py-10", step === "agency-plan" ? "items-start pt-16" : "")}>
-        <div className={cn("w-full", maxWidth)}>
+      <main className="flex flex-1 items-center justify-center px-6 py-10">
+        <div className="w-full max-w-md">
           {step === "role" && <RoleStep onSelect={handleRoleSelect} />}
           {step === "creator-profile" && (
             <CreatorProfileStep onDone={handleCreatorDone} />
           )}
           {step === "agency-info" && (
             <AgencyInfoStep onDone={handleAgencyInfo} />
-          )}
-          {step === "agency-plan" && (
-            <AgencyPlanStep
-              agencyName={agencyName}
-              onSelect={handlePlanSelect}
-            />
           )}
         </div>
       </main>

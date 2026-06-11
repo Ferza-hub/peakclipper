@@ -14,7 +14,6 @@ import {
   Scissors,
   Sparkles,
   Upload,
-  Zap,
 } from "lucide-react";
 import * as React from "react";
 
@@ -120,18 +119,10 @@ function JobCard({ job, onOpen }: { job: JobSummary; onOpen: (id: string) => voi
   );
 }
 
-const PLAN_LABELS: Record<string, { label: string; color: string }> = {
-  starter: { label: "Starter", color: "bg-blue-100 text-blue-700" },
-  pro: { label: "Pro", color: "bg-violet-100 text-violet-700" },
-  scale: { label: "Scale", color: "bg-amber-100 text-amber-700" },
-};
 
 function Navbar({ prefs }: { prefs: UserPrefs }) {
   const isAgency = prefs.role === "agency";
-  const planInfo = prefs.plan ? PLAN_LABELS[prefs.plan] : null;
-  const initials = (prefs.name || prefs.agencyName || "U")
-    .slice(0, 2)
-    .toUpperCase();
+  const initials = (prefs.name || prefs.agencyName || "U").slice(0, 2).toUpperCase();
 
   return (
     <header className="sticky top-0 z-30 border-b border-[#e2e8f0] bg-white/80 backdrop-blur-md">
@@ -148,21 +139,14 @@ function Navbar({ prefs }: { prefs: UserPrefs }) {
           {isAgency && (
             <a href="/clients" className="text-sm text-[#94a3b8] hover:text-[#0f172a] transition-colors">Clients</a>
           )}
-          <a href="/templates" className="text-sm text-[#94a3b8] hover:text-[#0f172a] transition-colors">Templates</a>
           <a href="/analytics" className="text-sm text-[#94a3b8] hover:text-[#0f172a] transition-colors">Analytics</a>
         </nav>
 
         <div className="flex items-center gap-2">
-          {isAgency && planInfo && (
-            <span className={cn("hidden sm:inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold", planInfo.color)}>
-              <Zap size={10} />
-              {planInfo.label}
-            </span>
-          )}
           {isAgency && (
             <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-[#e2e8f0] px-2.5 py-1 text-xs text-[#64748b]">
               <Building2 size={11} />
-              {prefs.agencyName || "Agency"}
+              {prefs.agencyName || "Business"}
             </div>
           )}
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#7c3aed] to-[#a78bfa] text-xs font-bold text-white">
