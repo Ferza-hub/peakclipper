@@ -1,6 +1,7 @@
 import { getJob } from "@/lib/job-store";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function GET(
   _request: Request,

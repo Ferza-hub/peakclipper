@@ -1,6 +1,8 @@
 import { spawn } from "child_process";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 30;
 
 function getVideoInfo(url: string): Promise<{
   title: string;

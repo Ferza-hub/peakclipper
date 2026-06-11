@@ -1,6 +1,8 @@
 import { getJob } from "@/lib/job-store";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function GET(
   _request: Request,

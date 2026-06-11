@@ -2,8 +2,10 @@ import { getAllJobs } from "@/lib/job-store";
 import fs from "fs";
 import { stat } from "fs/promises";
 import path from "path";
+import { Readable } from "stream";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 function findClipPath(clipId: string): string | null {
   for (const job of getAllJobs()) {
@@ -28,7 +30,6 @@ export async function GET(
     const fileStat = await stat(filePath);
     const fileSize = fileStat.size;
     const rangeHeader = request.headers.get("range");
-
     const ext = path.extname(filePath).toLowerCase();
     const contentType = ext === ".webm" ? "video/webm" : "video/mp4";
 
@@ -37,11 +38,9 @@ export async function GET(
       const start = parseInt(startStr, 10);
       const end = endStr ? parseInt(endStr, 10) : fileSize - 1;
       const chunkSize = end - start + 1;
-
-      const fileStream = fs.createReadStream(filePath, { start, end });
-      const { Readable } = await import("stream");
-      const webStream = Readable.toWeb(fileStream) as ReadableStream;
-
+      const webStream = Readable.toWeb(
+        fs.createReadStream(filePath, { start, end })
+      ) as ReadableStream;
       return new Response(webStream, {
         status: 206,
         headers: {
@@ -53,10 +52,9 @@ export async function GET(
       });
     }
 
-    const fileStream = fs.createReadStream(filePath);
-    const { Readable } = await import("stream");
-    const webStream = Readable.toWeb(fileStream) as ReadableStream;
-
+    const webStream = Readable.toWeb(
+      fs.createReadStream(filePath)
+    ) as ReadableStream;
     return new Response(webStream, {
       headers: {
         "Content-Type": contentType,

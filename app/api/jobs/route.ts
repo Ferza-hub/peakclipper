@@ -4,6 +4,8 @@ import fs from "fs/promises";
 import path from "path";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const UPLOAD_DIR = "/tmp/peakclipper/uploads";
 

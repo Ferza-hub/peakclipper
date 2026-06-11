@@ -190,7 +190,7 @@ function CreatorProfileStep({
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Ferza"
+            placeholder="e.g. Alex"
             className="w-full rounded-xl border border-[#e2e8f0] px-4 py-2.5 text-sm text-[#0f172a] placeholder:text-[#94a3b8] outline-none focus:border-[#7c3aed] focus:ring-2 focus:ring-violet-100 transition-all"
           />
         </div>
