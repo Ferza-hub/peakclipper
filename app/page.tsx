@@ -1,6 +1,6 @@
 "use client";
 
-import { GenerateModal } from "@/components/generate-modal";
+import { GenerateModal, type ClipSummary } from "@/components/generate-modal";
 import { OnboardingGuard } from "@/components/onboarding-guard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,7 +65,8 @@ function JobCard({
 }) {
   const isProcessing = !["done", "error"].includes(job.status);
   const colors = ["#312e81", "#1e3a5f", "#1a4731", "#4a2110", "#1e293b", "#3b1f6b"];
-  const color = colors[parseInt(job.id.slice(-2), 16) % colors.length];
+  const hash = job.id.split("").reduce((a, c) => (a + c.charCodeAt(0)) & 0xffff, 0);
+  const color = colors[hash % colors.length];
   const [renaming, setRenaming] = React.useState(false);
   const [renameVal, setRenameVal] = React.useState("");
 
@@ -430,6 +431,10 @@ function DashboardContent() {
   const [modalOpen, setModalOpen] = React.useState(false);
   const [activeUrl, setActiveUrl] = React.useState("");
   const [uploadedFile, setUploadedFile] = React.useState<File | null>(null);
+  const [viewJobData, setViewJobData] = React.useState<{
+    clips: ClipSummary[];
+    videoInfo?: { title: string; duration: number; thumbnail: string; channel: string } | null;
+  } | null>(null);
   const [jobs, setJobs] = React.useState<JobSummary[]>([]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -455,31 +460,45 @@ function DashboardContent() {
   const handleGenerate = (url: string) => {
     setActiveUrl(url);
     setUploadedFile(null);
+    setViewJobData(null);
     setModalOpen(true);
   };
 
   const handleFileSelect = (file: File) => {
     setUploadedFile(file);
     setActiveUrl(file.name);
+    setViewJobData(null);
     setModalOpen(true);
   };
 
-  const handleOpenJob = (_id: string) => {
-    setModalOpen(true);
+  const handleOpenJob = async (id: string) => {
+    try {
+      const resp = await fetch(`/api/jobs/${id}`);
+      if (!resp.ok) return;
+      const job = await resp.json();
+      setViewJobData({ clips: job.clips ?? [], videoInfo: job.videoInfo ?? null });
+      setActiveUrl("");
+      setUploadedFile(null);
+      setModalOpen(true);
+    } catch { /* ignore */ }
   };
 
   const handleDelete = async (id: string) => {
-    await fetch(`/api/jobs/${id}`, { method: "DELETE" });
-    setJobs((prev) => prev.filter((j) => j.id !== id));
+    const resp = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+    if (resp.ok) {
+      setJobs((prev) => prev.filter((j) => j.id !== id));
+    }
   };
 
   const handleRename = async (id: string, title: string) => {
-    await fetch(`/api/jobs/${id}`, {
+    const resp = await fetch(`/api/jobs/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ displayTitle: title }),
     });
-    setJobs((prev) => prev.map((j) => j.id === id ? { ...j, displayTitle: title } : j));
+    if (resp.ok) {
+      setJobs((prev) => prev.map((j) => j.id === id ? { ...j, displayTitle: title } : j));
+    }
   };
 
   const processingJobs = jobs.filter((j) => !["done", "error"].includes(j.status));
@@ -553,9 +572,10 @@ function DashboardContent() {
 
       <GenerateModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => { setModalOpen(false); setViewJobData(null); }}
         videoUrl={activeUrl}
         uploadedFile={uploadedFile}
+        viewMode={viewJobData}
       />
     </div>
   );

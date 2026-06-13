@@ -150,14 +150,19 @@ export function detectByInterval(
   const start = durationSec * 0.05;
   const end = durationSec * 0.95;
   const usable = end - start;
-  const count = Math.min(maxClips, Math.floor(usable / clipDur));
+
+  if (usable <= 0 || clipDur <= 0) return clips;
+
+  const count = Math.min(maxClips, Math.max(1, Math.floor(usable / clipDur)));
   const step = usable / count;
 
   for (let i = 0; i < count; i++) {
     const clipStart = start + i * step;
+    const actualDur = Math.min(clipDur, end - clipStart);
+    if (actualDur < 5) continue;
     clips.push({
       startTime: clipStart,
-      endTime: clipStart + clipDur,
+      endTime: clipStart + actualDur,
       score: Math.round(50 + Math.random() * 30),
       title: `Moment ${i + 1}`,
       transcript: "",

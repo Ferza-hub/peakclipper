@@ -69,8 +69,10 @@ export async function clipVideo(
   // Caption overlay (simple drawtext)
   if (addCaptions && captionText) {
     const safeText = captionText
+      .replace(/\\/g, "\\\\")   // backslashes first
       .replace(/'/g, "\\'")
       .replace(/:/g, "\\:")
+      .replace(/[\n\r]+/g, " ") // newlines → space
       .slice(0, 80);
     const fontSize = aspectRatio === "9:16" ? 36 : 28;
     vfFilters.push(

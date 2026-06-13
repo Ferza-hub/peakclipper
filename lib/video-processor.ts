@@ -13,8 +13,8 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 function checkBinaries(): Promise<boolean> {
   return new Promise((resolve) => {
     const proc = spawn("yt-dlp", ["--version"]);
-    proc.on("error", (err) => resolve((err as NodeJS.ErrnoException).code !== "ENOENT"));
-    proc.on("close", () => resolve(true));
+    proc.on("error", () => resolve(false)); // any spawn error → demo mode
+    proc.on("close", (code) => resolve(code === 0));
   });
 }
 
@@ -321,7 +321,7 @@ export async function processVideo(job: Job): Promise<void> {
     });
 
     const candidates =
-      segments && segments.length > 5
+      segments && segments.length >= 5
         ? detectHighlights(segments, settings.clipLength)
         : detectByInterval(videoDuration, settings.clipLength);
 
@@ -335,10 +335,12 @@ export async function processVideo(job: Job): Promise<void> {
     const clips: Clip[] = [];
     const clipsDir = path.join(TMP_DIR, "clips");
 
+    const perClipShare = 28 / Math.max(candidates.length, 1);
     for (let i = 0; i < candidates.length; i++) {
       const c = candidates[i];
       const clipId = `${id}_clip${i}`;
       const outputPath = path.join(clipsDir, `${clipId}.mp4`);
+      const base = 70 + i * perClipShare;
 
       await clipVideo(
         videoPath,
@@ -349,8 +351,7 @@ export async function processVideo(job: Job): Promise<void> {
         settings.captions,
         c.transcript.slice(0, 120),
         (pct) => {
-          const base = 70 + (i / candidates.length) * 28;
-          updateJob(id, { progress: base + (pct / candidates.length) * 0.28 });
+          updateJob(id, { progress: base + (pct / 100) * perClipShare });
         }
       );
 
@@ -378,9 +379,6 @@ export async function processVideo(job: Job): Promise<void> {
       currentStep: "Done!",
       clips,
     });
-
-    // Cleanup download directory (keep clips)
-    fs.rm(jobDir, { recursive: true, force: true }).catch(() => {});
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     updateJob(id, {
@@ -388,5 +386,12 @@ export async function processVideo(job: Job): Promise<void> {
       error: message,
       currentStep: "Failed",
     });
+  } finally {
+    // Cleanup download directory (keep clips)
+    fs.rm(jobDir, { recursive: true, force: true }).catch(() => {});
+    // Cleanup uploaded file
+    if (localFilePath?.startsWith("/tmp/peakclipper/uploads/")) {
+      fs.rm(localFilePath, { force: true }).catch(() => {});
+    }
   }
 }

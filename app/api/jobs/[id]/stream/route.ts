@@ -17,17 +17,19 @@ export async function GET(
       let closed = false;
 
       const send = (data: object) => {
-        if (!closed) {
+        if (closed) return;
+        try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          closed = true;
         }
       };
 
       const tick = () => {
         const job = getJob(id);
         if (!job) {
-          send({ error: "Job not found" });
-          controller.close();
-          closed = true;
+          send({ status: "error", error: "Job not found" });
+          if (!closed) { controller.close(); closed = true; }
           return;
         }
 

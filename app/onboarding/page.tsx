@@ -35,6 +35,10 @@ function AppleIcon() {
   );
 }
 
+function makeLocalEmail(provider: string) {
+  return `${provider}_${Math.random().toString(36).slice(2, 9)}@local`;
+}
+
 function AuthStep({ role, onDone }: { role: Role; onDone: (email: string) => void }) {
   const [emailMode, setEmailMode] = React.useState(false);
   const [email, setEmail] = React.useState("");
@@ -54,14 +58,14 @@ function AuthStep({ role, onDone }: { role: Role; onDone: (email: string) => voi
 
       <div className="space-y-3">
         <button
-          onClick={() => proceed("google-user@gmail.com")}
+          onClick={() => proceed(makeLocalEmail("google"))}
           className="flex w-full items-center justify-center gap-3 rounded-xl border border-[#e2e8f0] bg-white px-4 py-3 text-sm font-medium text-[#0f172a] shadow-sm hover:bg-[#f8fafc] hover:border-[#c7d2fe] transition-all cursor-pointer"
         >
           <GoogleIcon />
           Continue with Google
         </button>
         <button
-          onClick={() => proceed("apple-user@icloud.com")}
+          onClick={() => proceed(makeLocalEmail("apple"))}
           className="flex w-full items-center justify-center gap-3 rounded-xl bg-[#0f172a] px-4 py-3 text-sm font-medium text-white hover:bg-[#1e293b] transition-all cursor-pointer"
         >
           <AppleIcon />
@@ -123,17 +127,19 @@ const PLATFORMS = [
 
 const TEAM_SIZES = ["1–3", "4–10", "11–30", "30+"];
 
-function StepDots({ current }: { current: number; total: number }) {
+function StepDots({ current, total }: { current: number; total: number }) {
   return (
     <div className="flex items-center gap-1.5 mb-8">
-      {Array.from({ length: current }).map((_, i) => (
+      {Array.from({ length: total }).map((_, i) => (
         <div
           key={i}
           className={cn(
             "h-1.5 rounded-full transition-all",
             i === current - 1
               ? "w-6 bg-[#7c3aed]"
-              : "w-1.5 bg-[#c4b5fd]"
+              : i < current - 1
+              ? "w-1.5 bg-[#c4b5fd]"
+              : "w-1.5 bg-[#e2e8f0]"
           )}
         />
       ))}

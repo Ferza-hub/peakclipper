@@ -23,12 +23,19 @@ import * as React from "react";
 type UIStep = "configure" | "processing" | "results";
 type Mode = "shorts" | "captions" | "reframe";
 
+export type ClipSummary = { id: string; title: string; duration: number; score: number; transcript: string };
+
 export interface GenerateModalProps {
   open: boolean;
   onClose: () => void;
   videoUrl: string;
   uploadedFile?: File | null;
   prefetchedInfo?: { title: string; duration: number; thumbnail: string; channel: string } | null;
+  /** When set, the modal opens directly to the Results step for an existing job */
+  viewMode?: {
+    clips: ClipSummary[];
+    videoInfo?: { title: string; duration: number; thumbnail: string; channel: string } | null;
+  } | null;
 }
 
 const STEP_ORDER: UIStep[] = ["configure", "processing", "results"];
@@ -141,6 +148,7 @@ interface ConfigureStepProps {
   aspectRatio: string; setAspectRatio: (v: string) => void;
   videoInfo: { title: string; duration: number; thumbnail: string } | null;
   isLoadingInfo: boolean;
+  isSubmitting: boolean;
   onGenerate: () => void;
 }
 
@@ -152,7 +160,7 @@ function ConfigureStep({
   introTitle, setIntroTitle,
   captions, setCaptions,
   aspectRatio, setAspectRatio,
-  videoInfo, isLoadingInfo,
+  videoInfo, isLoadingInfo, isSubmitting,
   onGenerate,
 }: ConfigureStepProps) {
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
@@ -340,9 +348,9 @@ function ConfigureStep({
       </div>
 
       <div className="flex-shrink-0 border-t border-[#e2e8f0] px-6 py-4">
-        <Button size="lg" className="w-full gap-2" onClick={onGenerate}>
-          <Sparkles size={16} />
-          Generate clips
+        <Button size="lg" className="w-full gap-2" onClick={onGenerate} disabled={isSubmitting}>
+          {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+          {isSubmitting ? "Starting…" : "Generate clips"}
         </Button>
       </div>
     </div>
@@ -439,7 +447,7 @@ function ResultsStep({ clips, onClose, onNewVideo }: ResultsStepProps) {
   const [playing, setPlaying] = React.useState<string | null>(null);
   const [videoErrors, setVideoErrors] = React.useState<Set<string>>(new Set());
 
-  const isDemo = clips.some((c) => c.id.includes("_demo"));
+  const isDemo = clips.length > 0 && clips.every((c) => /_demo\d+$/.test(c.id));
   const clipSrc = (clipId: string) =>
     isDemo ? "/demo/sample-clip.mp4" : `/api/clips/${clipId}/video`;
 
@@ -534,7 +542,7 @@ function ResultsStep({ clips, onClose, onNewVideo }: ResultsStepProps) {
   );
 }
 
-export function GenerateModal({ open, onClose, videoUrl, uploadedFile, prefetchedInfo }: GenerateModalProps) {
+export function GenerateModal({ open, onClose, videoUrl, uploadedFile, prefetchedInfo, viewMode }: GenerateModalProps) {
   const [uiStep, setUiStep] = React.useState<UIStep>("configure");
   const [jobId, setJobId] = React.useState<string | null>(null);
   const [mode, setMode] = React.useState<Mode>("shorts");
@@ -546,12 +554,22 @@ export function GenerateModal({ open, onClose, videoUrl, uploadedFile, prefetche
   const [aspectRatio, setAspectRatio] = React.useState("9:16");
   const [videoInfo, setVideoInfo] = React.useState<{ title: string; duration: number; thumbnail: string; channel: string } | null>(null);
   const [isLoadingInfo, setIsLoadingInfo] = React.useState(false);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
+  const closeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const jobUpdate = useJobStream(uiStep === "processing" ? jobId : null);
+
+  // Open directly to results when viewing an existing job
+  React.useEffect(() => {
+    if (!open) return;
+    if (viewMode) {
+      setUiStep("results");
+    }
+  }, [open, viewMode]);
 
   // Use prefetched info or fetch when modal opens with a URL
   React.useEffect(() => {
-    if (!open) return;
+    if (!open || viewMode) return;
     if (prefetchedInfo) {
       setVideoInfo(prefetchedInfo);
       return;
@@ -570,7 +588,7 @@ export function GenerateModal({ open, onClose, videoUrl, uploadedFile, prefetche
       })
       .catch(() => {})
       .finally(() => setIsLoadingInfo(false));
-  }, [open, videoUrl, prefetchedInfo, uploadedFile]);
+  }, [open, videoUrl, prefetchedInfo, uploadedFile, viewMode]);
 
   // Auto-advance to results when processing is done
   React.useEffect(() => {
@@ -581,16 +599,18 @@ export function GenerateModal({ open, onClose, videoUrl, uploadedFile, prefetche
 
   const handleClose = () => {
     onClose();
-    setTimeout(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => {
       setUiStep("configure");
       setJobId(null);
       setVideoInfo(null);
+      closeTimerRef.current = null;
     }, 300);
   };
 
   const handleGenerate = async () => {
     const settings = { mode, clipLength, language, captionStyle, introTitle, captions, aspectRatio };
-    setUiStep("processing");
+    setIsSubmitting(true);
 
     try {
       let resp: Response;
@@ -610,13 +630,16 @@ export function GenerateModal({ open, onClose, videoUrl, uploadedFile, prefetche
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json() as { jobId: string };
       setJobId(data.jobId);
+      setUiStep("processing"); // only transition after job is confirmed
     } catch (err) {
       console.error("Failed to create job:", err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const clips = jobUpdate?.clips ?? [];
-  const displayVideoInfo = videoInfo ?? (jobUpdate?.videoInfo ?? null);
+  const clips = viewMode?.clips ?? jobUpdate?.clips ?? [];
+  const displayVideoInfo = viewMode?.videoInfo ?? videoInfo ?? (jobUpdate?.videoInfo ?? null);
 
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && handleClose()}>
@@ -655,6 +678,7 @@ export function GenerateModal({ open, onClose, videoUrl, uploadedFile, prefetche
               aspectRatio={aspectRatio} setAspectRatio={setAspectRatio}
               videoInfo={displayVideoInfo}
               isLoadingInfo={isLoadingInfo}
+              isSubmitting={isSubmitting}
               onGenerate={handleGenerate}
             />
           )}
