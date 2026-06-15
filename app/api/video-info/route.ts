@@ -15,8 +15,10 @@ function getVideoInfo(url: string): Promise<{
     let stderr = "";
     const proc = spawn("yt-dlp", [
       "--no-check-certificate",
-      "--dump-json",
+      "--extractor-args", "youtube:player_client=android,web",
+      "--js-runtimes", "node",
       "--no-playlist",
+      "--dump-json",
       url,
     ]);
     proc.stdout.on("data", (d: Buffer) => (stdout += d.toString()));

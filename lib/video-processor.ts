@@ -8,6 +8,16 @@ import { mergeShortSegments, parseVTT, parseSRT } from "./subtitle-parser";
 
 const TMP_DIR = "/tmp/peakclipper";
 
+// Flags applied to every yt-dlp invocation.
+// - android client: bypasses "sign in to confirm you're not a bot" for most videos
+// - js-runtimes node: use the installed Node.js for JS-based extraction
+const YTDLP_BASE = [
+  "--no-check-certificate",
+  "--extractor-args", "youtube:player_client=android,web",
+  "--js-runtimes", "node",
+  "--no-playlist",
+];
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function checkBinaries(): Promise<boolean> {
@@ -155,9 +165,8 @@ function runCommand(
 
 async function getVideoInfo(url: string) {
   const json = await runCommand("yt-dlp", [
-    "--no-check-certificate",
+    ...YTDLP_BASE,
     "--dump-json",
-    "--no-playlist",
     url,
   ]);
   const data = JSON.parse(json);
@@ -181,8 +190,7 @@ async function downloadVideo(
   await runCommand(
     "yt-dlp",
     [
-      "--no-check-certificate",
-      "--no-playlist",
+      ...YTDLP_BASE,
       "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
       "--merge-output-format", "mp4",
       "-o", outputTemplate,
@@ -211,12 +219,11 @@ async function extractSubtitles(
 
   try {
     await runCommand("yt-dlp", [
-      "--no-check-certificate",
+      ...YTDLP_BASE,
       "--write-auto-sub",
       "--sub-lang", langs,
       "--sub-format", "vtt",
       "--skip-download",
-      "--no-playlist",
       "-o", outputTemplate,
       url,
     ]);
