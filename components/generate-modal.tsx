@@ -457,9 +457,22 @@ function ResultsStep({ clips, onClose, onNewVideo }: ResultsStepProps) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold text-[#0f172a]">{clips.length} clips ready</p>
-            <p className="text-xs text-[#94a3b8]">
-              {isDemo ? "Demo — deploy with yt-dlp + ffmpeg for real clips" : "Sorted by engagement score"}
-            </p>
+            {isDemo ? (
+              <p className="text-xs text-[#f59e0b]">
+                Demo Mode — clips are simulated.{" "}
+                <a
+                  href="https://railway.app"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-[#d97706]"
+                >
+                  Deploy on Railway
+                </a>{" "}
+                for real YouTube clips.
+              </p>
+            ) : (
+              <p className="text-xs text-[#94a3b8]">Sorted by engagement score</p>
+            )}
           </div>
           <Button variant="outline" size="sm" asChild>
             <a
