@@ -9,14 +9,20 @@ import { mergeShortSegments, parseVTT, parseSRT } from "./subtitle-parser";
 const TMP_DIR = "/tmp/peakclipper";
 
 // Flags applied to every yt-dlp invocation.
-// - android client: bypasses "sign in to confirm you're not a bot" for most videos
-// - js-runtimes node: use the installed Node.js for JS-based extraction
-const YTDLP_BASE = [
-  "--no-check-certificate",
-  "--extractor-args", "youtube:player_client=android,web",
-  "--js-runtimes", "node",
-  "--no-playlist",
-];
+// - android client: bypasses bot detection for most videos
+// - js-runtimes node: use installed Node.js for JS-based extraction
+// - cookies: optional file path via YTDLP_COOKIES_FILE env var (Netscape format)
+function ytdlpBase(): string[] {
+  const base = [
+    "--no-check-certificate",
+    "--extractor-args", "youtube:player_client=android,web",
+    "--js-runtimes", "node",
+    "--no-playlist",
+  ];
+  const cookiesFile = process.env.YTDLP_COOKIES_FILE;
+  if (cookiesFile) base.push("--cookies", cookiesFile);
+  return base;
+}
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -165,7 +171,7 @@ function runCommand(
 
 async function getVideoInfo(url: string) {
   const json = await runCommand("yt-dlp", [
-    ...YTDLP_BASE,
+    ...ytdlpBase(),
     "--dump-json",
     url,
   ]);
@@ -190,7 +196,7 @@ async function downloadVideo(
   await runCommand(
     "yt-dlp",
     [
-      ...YTDLP_BASE,
+      ...ytdlpBase(),
       "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
       "--merge-output-format", "mp4",
       "-o", outputTemplate,
@@ -219,7 +225,7 @@ async function extractSubtitles(
 
   try {
     await runCommand("yt-dlp", [
-      ...YTDLP_BASE,
+      ...ytdlpBase(),
       "--write-auto-sub",
       "--sub-lang", langs,
       "--sub-format", "vtt",

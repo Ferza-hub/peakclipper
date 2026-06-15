@@ -13,12 +13,14 @@ function getVideoInfo(url: string): Promise<{
   return new Promise((resolve, reject) => {
     let stdout = "";
     let stderr = "";
+    const cookiesFile = process.env.YTDLP_COOKIES_FILE;
     const proc = spawn("yt-dlp", [
       "--no-check-certificate",
       "--extractor-args", "youtube:player_client=android,web",
       "--js-runtimes", "node",
       "--no-playlist",
       "--dump-json",
+      ...(cookiesFile ? ["--cookies", cookiesFile] : []),
       url,
     ]);
     proc.stdout.on("data", (d: Buffer) => (stdout += d.toString()));

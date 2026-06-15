@@ -87,6 +87,17 @@ write(path.join(PKG_DIR, ".env.example"), [
   "# (Optional) Set to 'production' for prod deployments",
   "NODE_ENV=production",
   "",
+  "# (Optional) Path to a Netscape-format YouTube cookies file.",
+  "# Required when YouTube blocks yt-dlp on datacenter IPs.",
+  "# How to set up:",
+  "#   Option A — OAuth (easiest, no file needed):",
+  "#     Run once on the server: yt-dlp --username oauth --password '' https://www.youtube.com/",
+  "#     Follow the device-auth link, log in with Google. Tokens saved automatically.",
+  "#   Option B — Cookies file:",
+  "#     Export cookies from Chrome/Firefox while logged into YouTube.",
+  "#     Upload the file to the server, then set this path:",
+  "# YTDLP_COOKIES_FILE=/root/.config/yt-dlp/cookies.txt",
+  "",
 ].join("\n"));
 
 // ── write INSTALL.txt ─────────────────────────────────────────────────────────
