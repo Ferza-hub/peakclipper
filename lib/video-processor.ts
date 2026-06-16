@@ -209,13 +209,30 @@ function runCommand(
   });
 }
 
+// Piped-fronted URL for yt-dlp's built-in Piped extractor (no YouTube auth needed)
+const PIPED_FRONTEND_HOSTS = [
+  "piped.video",
+  "piped.adminforge.de",
+  "piped.smnz.de",
+  "piped.yt",
+];
+
+function toPipedUrl(videoId: string, hostIndex = 0): string {
+  return `https://${PIPED_FRONTEND_HOSTS[hostIndex % PIPED_FRONTEND_HOSTS.length]}/watch?v=${videoId}`;
+}
+
+// yt-dlp flags for non-YouTube URLs (no youtube-specific extractor-args needed)
+function ytdlpBaseGeneric(): string[] {
+  const base = ["--no-check-certificate", "--no-playlist"];
+  const cookiesFile = process.env.YTDLP_COOKIES_FILE;
+  if (cookiesFile) base.push("--cookies", cookiesFile);
+  return base;
+}
+
 async function getVideoInfo(url: string) {
+  // Step 1: direct YouTube via yt-dlp
   try {
-    const json = await runCommand("yt-dlp", [
-      ...ytdlpBase(),
-      "--dump-json",
-      url,
-    ]);
+    const json = await runCommand("yt-dlp", [...ytdlpBase(), "--dump-json", url]);
     const data = JSON.parse(json);
     return {
       title: data.title as string,
@@ -225,22 +242,41 @@ async function getVideoInfo(url: string) {
       url,
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    const videoId = extractYouTubeId(url);
-    if (isBotError(msg) && videoId) {
-      const data = await fetchPiped(videoId);
-      if (data) {
-        return {
-          title: data.title,
-          duration: data.duration,
-          thumbnail: data.thumbnailUrl ?? "",
-          channel: data.uploader ?? "Unknown",
-          url,
-        };
-      }
-    }
-    throw err;
+    if (!isBotError(err instanceof Error ? err.message : "") || !extractYouTubeId(url)) throw err;
   }
+
+  const videoId = extractYouTubeId(url)!;
+
+  // Step 2: yt-dlp via piped.video frontend (bypasses bot detection natively)
+  for (let i = 0; i < PIPED_FRONTEND_HOSTS.length; i++) {
+    try {
+      const json = await runCommand("yt-dlp", [
+        ...ytdlpBaseGeneric(), "--dump-json", toPipedUrl(videoId, i),
+      ]);
+      const data = JSON.parse(json);
+      return {
+        title: data.title as string,
+        duration: data.duration as number,
+        thumbnail: (data.thumbnail || data.thumbnails?.[0]?.url || "") as string,
+        channel: (data.channel || data.uploader || "Unknown") as string,
+        url,
+      };
+    } catch { /* try next */ }
+  }
+
+  // Step 3: Piped API JSON fallback
+  const piped = await fetchPiped(videoId);
+  if (piped) {
+    return {
+      title: piped.title,
+      duration: piped.duration,
+      thumbnail: piped.thumbnailUrl ?? "",
+      channel: piped.uploader ?? "Unknown",
+      url,
+    };
+  }
+
+  throw new Error("Unable to fetch video info — YouTube is blocking this server IP. Try uploading the video file directly.");
 }
 
 async function downloadViaYtdlp(
@@ -329,15 +365,38 @@ async function downloadVideo(
   jobId: string,
   onProgress: (p: number) => void
 ): Promise<string> {
+  // Step 1: direct YouTube
   try {
     return await downloadViaYtdlp(url, destDir, jobId, onProgress);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (isBotError(msg) && extractYouTubeId(url)) {
-      return await downloadViaPiped(url, destDir, jobId, onProgress);
-    }
-    throw err;
+    if (!isBotError(err instanceof Error ? err.message : "") || !extractYouTubeId(url)) throw err;
   }
+
+  const videoId = extractYouTubeId(url)!;
+
+  // Step 2: yt-dlp via piped.video frontend (built-in extractor, no YouTube auth)
+  for (let i = 0; i < PIPED_FRONTEND_HOSTS.length; i++) {
+    try {
+      const outputTemplate = path.join(destDir, `${jobId}.%(ext)s`);
+      await runCommand(
+        "yt-dlp",
+        [
+          ...ytdlpBaseGeneric(),
+          "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]",
+          "--merge-output-format", "mp4",
+          "-o", outputTemplate,
+          toPipedUrl(videoId, i),
+        ],
+        (line) => { const m = line.match(/(\d+\.\d+)%/); if (m) onProgress(parseFloat(m[1])); }
+      );
+      const files = await fs.readdir(destDir);
+      const found = files.find((f) => f.startsWith(jobId) && f.endsWith(".mp4"));
+      if (found) return path.join(destDir, found);
+    } catch { /* try next host */ }
+  }
+
+  // Step 3: manual Piped API stream download
+  return await downloadViaPiped(url, destDir, jobId, onProgress);
 }
 
 async function extractSubtitlesViaPiped(
@@ -385,10 +444,26 @@ async function extractSubtitles(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const videoId = extractYouTubeId(url);
-    if (isBotError(msg) && videoId) {
-      return extractSubtitlesViaPiped(videoId, destDir, language);
+    if (!isBotError(msg) || !videoId) return null;
+
+    // Retry via piped.video frontend
+    for (let i = 0; i < PIPED_FRONTEND_HOSTS.length; i++) {
+      try {
+        await runCommand("yt-dlp", [
+          ...ytdlpBaseGeneric(),
+          "--write-auto-sub",
+          "--sub-lang", langs,
+          "--sub-format", "vtt",
+          "--skip-download",
+          "-o", outputTemplate,
+          toPipedUrl(videoId, i),
+        ]);
+        break;
+      } catch { /* try next */ }
     }
-    return null;
+
+    // Piped API subtitle fallback
+    return extractSubtitlesViaPiped(videoId, destDir, language);
   }
 
   const files = await fs.readdir(destDir);
