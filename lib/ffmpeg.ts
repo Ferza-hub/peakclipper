@@ -91,7 +91,7 @@ export async function clipVideo(
 
   if (vfFilters.length > 0) {
     args.push("-vf", vfFilters.join(","));
-    args.push("-c:v", "libx264", "-crf", "23", "-preset", "fast");
+    args.push("-c:v", "libx264", "-crf", "23", "-preset", "ultrafast", "-threads", "0");
   } else {
     args.push("-c:v", "copy");
   }
