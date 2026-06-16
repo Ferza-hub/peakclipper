@@ -47,7 +47,20 @@ function extractYouTubeId(url: string): string | null {
 }
 
 function isBotError(msg: string): boolean {
-  return msg.includes("Sign in") || msg.includes("bot") || msg.includes("cookies") || msg.includes("Login");
+  return (
+    msg.includes("Sign in") ||
+    msg.includes("bot") ||
+    msg.includes("cookies") ||
+    msg.includes("Login") ||
+    msg.includes("403") ||
+    msg.includes("Forbidden") ||
+    msg.includes("429") ||
+    msg.includes("Too Many Requests") ||
+    msg.includes("Precondition") ||
+    msg.includes("unavailable") ||
+    msg.includes("Private video") ||
+    msg.includes("This video")
+  );
 }
 
 async function fetchPiped(videoId: string): Promise<PipedData | null> {
@@ -256,7 +269,21 @@ function ytdlpBaseGeneric(): string[] {
 }
 
 async function getVideoInfo(url: string) {
-  // Step 1: direct YouTube via yt-dlp
+  const videoId = extractYouTubeId(url);
+
+  // For YouTube: oEmbed is the most reliable source for public videos (no auth ever needed).
+  // Get title/channel/thumbnail instantly, then try yt-dlp just for duration.
+  if (videoId) {
+    const oembed = await fetchOembed(videoId);
+    if (oembed) {
+      const duration = await runCommand("yt-dlp", [...ytdlpBase(), "--dump-json", url])
+        .then((json) => (JSON.parse(json).duration as number) || 0)
+        .catch(() => 0); // blocked IPs return 0; ffprobe fills in actual duration later
+      return { title: oembed.title, duration, thumbnail: oembed.thumbnail, channel: oembed.channel, url };
+    }
+  }
+
+  // Non-YouTube or oEmbed failed: try yt-dlp directly
   try {
     const json = await runCommand("yt-dlp", [...ytdlpBase(), "--dump-json", url]);
     const data = JSON.parse(json);
@@ -268,47 +295,16 @@ async function getVideoInfo(url: string) {
       url,
     };
   } catch (err) {
-    if (!isBotError(err instanceof Error ? err.message : "") || !extractYouTubeId(url)) throw err;
+    if (!isBotError(err instanceof Error ? err.message : "") || !videoId) throw err;
   }
 
-  const videoId = extractYouTubeId(url)!;
-
-  // Step 2: yt-dlp via piped.video frontend (bypasses bot detection natively)
-  for (let i = 0; i < PIPED_FRONTEND_HOSTS.length; i++) {
-    try {
-      const json = await runCommand("yt-dlp", [
-        ...ytdlpBaseGeneric(), "--dump-json", toPipedUrl(videoId, i),
-      ]);
-      const data = JSON.parse(json);
-      return {
-        title: data.title as string,
-        duration: data.duration as number,
-        thumbnail: (data.thumbnail || data.thumbnails?.[0]?.url || "") as string,
-        channel: (data.channel || data.uploader || "Unknown") as string,
-        url,
-      };
-    } catch { /* try next */ }
-  }
-
-  // Step 3: Piped API JSON fallback
-  const piped = await fetchPiped(videoId);
+  // Last resort for YouTube: Piped API
+  const piped = await fetchPiped(videoId!);
   if (piped) {
-    return {
-      title: piped.title,
-      duration: piped.duration,
-      thumbnail: piped.thumbnailUrl ?? "",
-      channel: piped.uploader ?? "Unknown",
-      url,
-    };
+    return { title: piped.title, duration: piped.duration, thumbnail: piped.thumbnailUrl ?? "", channel: piped.uploader ?? "Unknown", url };
   }
 
-  // Step 4: YouTube oEmbed — always works for public videos, no auth
-  const oembed = await fetchOembed(videoId);
-  if (oembed) {
-    return { title: oembed.title, duration: 0, thumbnail: oembed.thumbnail, channel: oembed.channel, url };
-  }
-
-  throw new Error("Unable to fetch video info — YouTube is blocking this server IP. Try uploading the video file directly.");
+  throw new Error("Unable to fetch video info. Try uploading the video file directly.");
 }
 
 async function downloadViaYtdlp(
@@ -391,60 +387,88 @@ async function downloadViaPiped(
   return outputPath;
 }
 
+async function downloadFromUrl(
+  streamUrl: string,
+  outputPath: string,
+  onProgress: (p: number) => void
+): Promise<void> {
+  // Use fetch to pipe stream to file — more reliable than yt-dlp for direct CDN URLs
+  const { createWriteStream } = await import("fs");
+  const resp = await fetch(streamUrl, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; PeakClipper/1.0)" },
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!resp.ok) throw new Error(`Download failed: ${resp.status}`);
+  const total = parseInt(resp.headers.get("content-length") ?? "0");
+  let received = 0;
+  const writer = createWriteStream(outputPath);
+  const reader = resp.body!.getReader();
+  await new Promise<void>((resolve, reject) => {
+    writer.on("error", reject);
+    const pump = async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) { writer.end(); break; }
+          writer.write(value);
+          received += value.length;
+          if (total > 0) onProgress(Math.min(99, (received / total) * 100));
+        }
+        writer.once("finish", resolve);
+      } catch (e) { reject(e); }
+    };
+    pump();
+  });
+}
+
 async function downloadVideo(
   url: string,
   destDir: string,
   jobId: string,
   onProgress: (p: number) => void
 ): Promise<string> {
-  // Step 1: direct YouTube
+  const videoId = extractYouTubeId(url);
+  const outputPath = path.join(destDir, `${jobId}.mp4`);
+
+  // Step 1 (YouTube): cobalt.tools — purpose-built bypass, try first to avoid long timeouts
+  if (videoId) {
+    try {
+      const cobaltUrl = await fetchCobaltUrl(url);
+      if (cobaltUrl) {
+        await downloadFromUrl(cobaltUrl, outputPath, onProgress);
+        if (await fs.stat(outputPath).then((s) => s.size > 0).catch(() => false)) return outputPath;
+      }
+    } catch { /* fall through */ }
+  }
+
+  // Step 2: yt-dlp direct (works fine for non-YouTube or if cobalt unavailable)
   try {
     return await downloadViaYtdlp(url, destDir, jobId, onProgress);
   } catch (err) {
-    if (!isBotError(err instanceof Error ? err.message : "") || !extractYouTubeId(url)) throw err;
+    const msg = err instanceof Error ? err.message : "";
+    if (!isBotError(msg) || !videoId) throw err;
   }
 
-  const videoId = extractYouTubeId(url)!;
-
-  // Step 2: yt-dlp via piped.video frontend (built-in extractor, no YouTube auth)
+  // Step 3: yt-dlp via piped.video frontend
   for (let i = 0; i < PIPED_FRONTEND_HOSTS.length; i++) {
     try {
       const outputTemplate = path.join(destDir, `${jobId}.%(ext)s`);
       await runCommand(
         "yt-dlp",
-        [
-          ...ytdlpBaseGeneric(),
-          "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]",
-          "--merge-output-format", "mp4",
-          "-o", outputTemplate,
-          toPipedUrl(videoId, i),
-        ],
+        [...ytdlpBaseGeneric(), "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]",
+          "--merge-output-format", "mp4", "-o", outputTemplate, toPipedUrl(videoId!, i)],
         (line) => { const m = line.match(/(\d+\.\d+)%/); if (m) onProgress(parseFloat(m[1])); }
       );
       const files = await fs.readdir(destDir);
       const found = files.find((f) => f.startsWith(jobId) && f.endsWith(".mp4"));
       if (found) return path.join(destDir, found);
-    } catch { /* try next host */ }
+    } catch { /* try next */ }
   }
 
-  // Step 3: manual Piped API stream download
-  try {
-    return await downloadViaPiped(url, destDir, jobId, onProgress);
-  } catch { /* fall through */ }
+  // Step 4: manual Piped API stream download
+  try { return await downloadViaPiped(url, destDir, jobId, onProgress); } catch { /* fall through */ }
 
-  // Step 4: cobalt.tools — free YouTube downloader, handles auth on their side
-  const cobaltUrl = await fetchCobaltUrl(url);
-  if (cobaltUrl) {
-    const outputPath = path.join(destDir, `${jobId}.mp4`);
-    await runCommand(
-      "yt-dlp",
-      ["--no-check-certificate", "-o", outputPath, cobaltUrl],
-      (line) => { const m = line.match(/(\d+\.\d+)%/); if (m) onProgress(parseFloat(m[1])); }
-    );
-    if (await fs.stat(outputPath).then(() => true).catch(() => false)) return outputPath;
-  }
-
-  throw new Error("All download methods failed. YouTube is heavily blocking this server IP. Please upload the video file directly.");
+  throw new Error("All download methods failed. Please upload the video file directly.");
 }
 
 async function extractSubtitlesViaPiped(

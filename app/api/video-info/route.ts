@@ -64,27 +64,37 @@ export async function GET(request: Request) {
   const url = searchParams.get("url");
   if (!url) return Response.json({ error: "Missing url parameter" }, { status: 400 });
 
-  // Step 1: direct YouTube
+  const videoId = extractYouTubeId(url);
+
+  // For YouTube: oEmbed first — always works for public videos, no auth
+  if (videoId) {
+    try {
+      const oe = await fetch(
+        `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
+        { signal: AbortSignal.timeout(8_000) }
+      );
+      if (oe.ok) {
+        const d = await oe.json() as { title: string; author_name: string; thumbnail_url: string };
+        // Supplement with yt-dlp duration (best-effort, ignore failure)
+        const duration = await runYtdlp(ytdlpArgs(true, url))
+          .then((j) => (JSON.parse(j).duration as number) || 0)
+          .catch(() => 0);
+        return Response.json({ title: d.title, duration, thumbnail: d.thumbnail_url, channel: d.author_name, url });
+      }
+    } catch { /* fall through */ }
+  }
+
+  // Non-YouTube or oEmbed failed: try yt-dlp
   try {
     return Response.json(parseInfo(await runYtdlp(ytdlpArgs(true, url)), url));
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
-    if (!isBotError(msg) || !extractYouTubeId(url)) {
+    if (!isBotError(msg) || !videoId) {
       return Response.json({ error: msg || "Failed to fetch video info" }, { status: 422 });
     }
   }
 
-  const videoId = extractYouTubeId(url)!;
-
-  // Step 2: yt-dlp via piped.video frontend (built-in Piped extractor)
-  for (const host of PIPED_FRONTEND_HOSTS) {
-    try {
-      const pipedUrl = `https://${host}/watch?v=${videoId}`;
-      return Response.json(parseInfo(await runYtdlp(ytdlpArgs(false, pipedUrl)), url));
-    } catch { /* try next */ }
-  }
-
-  // Step 3: Piped API JSON fallback
+  // Last resort: Piped API
   for (const instance of PIPED_API_INSTANCES) {
     try {
       const resp = await fetch(`${instance}/streams/${videoId}`, {
@@ -97,17 +107,5 @@ export async function GET(request: Request) {
     } catch { /* try next */ }
   }
 
-  // Step 4: YouTube oEmbed (always works for public videos, no auth)
-  try {
-    const oe = await fetch(
-      `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
-      { signal: AbortSignal.timeout(8_000) }
-    );
-    if (oe.ok) {
-      const d = await oe.json() as { title: string; author_name: string; thumbnail_url: string };
-      return Response.json({ title: d.title, duration: 0, thumbnail: d.thumbnail_url, channel: d.author_name, url });
-    }
-  } catch { /* fall through */ }
-
-  return Response.json({ error: "YouTube is blocking this server. Try uploading the video file directly." }, { status: 422 });
+  return Response.json({ error: "Unable to fetch video info. Try uploading the video file directly." }, { status: 422 });
 }
