@@ -97,5 +97,17 @@ export async function GET(request: Request) {
     } catch { /* try next */ }
   }
 
+  // Step 4: YouTube oEmbed (always works for public videos, no auth)
+  try {
+    const oe = await fetch(
+      `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
+      { signal: AbortSignal.timeout(8_000) }
+    );
+    if (oe.ok) {
+      const d = await oe.json() as { title: string; author_name: string; thumbnail_url: string };
+      return Response.json({ title: d.title, duration: 0, thumbnail: d.thumbnail_url, channel: d.author_name, url });
+    }
+  } catch { /* fall through */ }
+
   return Response.json({ error: "YouTube is blocking this server. Try uploading the video file directly." }, { status: 422 });
 }

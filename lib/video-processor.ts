@@ -64,6 +64,32 @@ async function fetchPiped(videoId: string): Promise<PipedData | null> {
   return null;
 }
 
+// YouTube oEmbed — always works for public videos, no auth needed
+async function fetchOembed(videoId: string): Promise<{ title: string; channel: string; thumbnail: string } | null> {
+  try {
+    const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+    const resp = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+    if (!resp.ok) return null;
+    const d = await resp.json() as { title: string; author_name: string; thumbnail_url: string };
+    return { title: d.title, channel: d.author_name, thumbnail: d.thumbnail_url };
+  } catch { return null; }
+}
+
+// cobalt.tools — free YouTube downloader API, handles auth on their side
+async function fetchCobaltUrl(url: string): Promise<string | null> {
+  try {
+    const resp = await fetch("https://api.cobalt.tools/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ url, videoQuality: "720", filenameStyle: "basic" }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!resp.ok) return null;
+    const d = await resp.json() as { status: string; url?: string };
+    return d.url ?? null;
+  } catch { return null; }
+}
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function checkBinaries(): Promise<boolean> {
@@ -276,6 +302,12 @@ async function getVideoInfo(url: string) {
     };
   }
 
+  // Step 4: YouTube oEmbed — always works for public videos, no auth
+  const oembed = await fetchOembed(videoId);
+  if (oembed) {
+    return { title: oembed.title, duration: 0, thumbnail: oembed.thumbnail, channel: oembed.channel, url };
+  }
+
   throw new Error("Unable to fetch video info — YouTube is blocking this server IP. Try uploading the video file directly.");
 }
 
@@ -396,7 +428,23 @@ async function downloadVideo(
   }
 
   // Step 3: manual Piped API stream download
-  return await downloadViaPiped(url, destDir, jobId, onProgress);
+  try {
+    return await downloadViaPiped(url, destDir, jobId, onProgress);
+  } catch { /* fall through */ }
+
+  // Step 4: cobalt.tools — free YouTube downloader, handles auth on their side
+  const cobaltUrl = await fetchCobaltUrl(url);
+  if (cobaltUrl) {
+    const outputPath = path.join(destDir, `${jobId}.mp4`);
+    await runCommand(
+      "yt-dlp",
+      ["--no-check-certificate", "-o", outputPath, cobaltUrl],
+      (line) => { const m = line.match(/(\d+\.\d+)%/); if (m) onProgress(parseFloat(m[1])); }
+    );
+    if (await fs.stat(outputPath).then(() => true).catch(() => false)) return outputPath;
+  }
+
+  throw new Error("All download methods failed. YouTube is heavily blocking this server IP. Please upload the video file directly.");
 }
 
 async function extractSubtitlesViaPiped(
