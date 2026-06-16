@@ -56,7 +56,7 @@ cp(path.join(ROOT, "docs", "USER_GUIDE.md"), path.join(PKG_DIR, "docs", "USER_GU
 console.log("🚂  Copying Railway / Docker deploy files...");
 cp(path.join(ROOT, "railway.json"),   path.join(PKG_DIR, "railway.json"));
 cp(path.join(ROOT, "nixpacks.toml"),  path.join(PKG_DIR, "nixpacks.toml"));
-cp(path.join(ROOT, "Dockerfile"),     path.join(PKG_DIR, "Dockerfile"));
+cp(path.join(ROOT, "Dockerfile.dist"), path.join(PKG_DIR, "Dockerfile"));
 
 // ── write stripped package.json (runtime deps only, no devDeps) ──────────────
 
