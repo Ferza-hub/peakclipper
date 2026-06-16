@@ -4,17 +4,17 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const PIPED_FRONTEND_HOSTS = [
-  "piped.video",
-  "piped.adminforge.de",
-  "piped.smnz.de",
-  "piped.yt",
-];
-
 const PIPED_API_INSTANCES = [
   "https://pipedapi.kavin.rocks",
   "https://api.piped.projectsegfault.net",
   "https://piped-api.garudalinux.org",
+];
+
+const YTDLP_CLIENTS = [
+  "android,web",
+  "tv_embedded,web",
+  "ios",
+  "mweb",
 ];
 
 function extractYouTubeId(url: string): string | null {
@@ -23,16 +23,27 @@ function extractYouTubeId(url: string): string | null {
 }
 
 function isBotError(msg: string): boolean {
-  return msg.includes("Sign in") || msg.includes("bot") || msg.includes("cookies") || msg.includes("Login");
+  return (
+    msg.includes("Sign in") || msg.includes("bot") || msg.includes("cookies") ||
+    msg.includes("Login") || msg.includes("403") || msg.includes("Forbidden") ||
+    msg.includes("429") || msg.includes("unavailable") || msg.includes("Private video") ||
+    msg.includes("This video")
+  );
 }
 
-function ytdlpArgs(youtubeSpecific: boolean, extraUrl?: string): string[] {
+function ytdlpArgs(clientIndex: number, extraUrl: string): string[] {
+  const client = YTDLP_CLIENTS[clientIndex % YTDLP_CLIENTS.length];
+  const base = [
+    "--no-check-certificate",
+    "--extractor-args", `youtube:player_client=${client}`,
+    "--no-playlist",
+  ];
+  if (client.includes("android") || client.includes("web")) {
+    base.push("--js-runtimes", "node");
+  }
   const cookiesFile = process.env.YTDLP_COOKIES_FILE;
-  const base = youtubeSpecific
-    ? ["--no-check-certificate", "--extractor-args", "youtube:player_client=android,web", "--js-runtimes", "node", "--no-playlist"]
-    : ["--no-check-certificate", "--no-playlist"];
   if (cookiesFile) base.push("--cookies", cookiesFile);
-  if (extraUrl) base.push("--dump-json", extraUrl);
+  base.push("--dump-json", extraUrl);
   return base;
 }
 
@@ -75,36 +86,46 @@ export async function GET(request: Request) {
       );
       if (oe.ok) {
         const d = await oe.json() as { title: string; author_name: string; thumbnail_url: string };
-        // Supplement with yt-dlp duration (best-effort, ignore failure)
-        const duration = await runYtdlp(ytdlpArgs(true, url))
-          .then((j) => (JSON.parse(j).duration as number) || 0)
-          .catch(() => 0);
+        // Try each yt-dlp client for duration; first success wins
+        let duration = 0;
+        for (let ci = 0; ci < YTDLP_CLIENTS.length; ci++) {
+          try {
+            const j = await runYtdlp(ytdlpArgs(ci, url));
+            duration = (JSON.parse(j).duration as number) || 0;
+            if (duration > 0) break;
+          } catch { /* try next client */ }
+        }
         return Response.json({ title: d.title, duration, thumbnail: d.thumbnail_url, channel: d.author_name, url });
       }
     } catch { /* fall through */ }
   }
 
-  // Non-YouTube or oEmbed failed: try yt-dlp
-  try {
-    return Response.json(parseInfo(await runYtdlp(ytdlpArgs(true, url)), url));
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "";
-    if (!isBotError(msg) || !videoId) {
-      return Response.json({ error: msg || "Failed to fetch video info" }, { status: 422 });
+  // Non-YouTube or oEmbed failed: try yt-dlp with each client
+  for (let ci = 0; ci < YTDLP_CLIENTS.length; ci++) {
+    try {
+      return Response.json(parseInfo(await runYtdlp(ytdlpArgs(ci, url)), url));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (!isBotError(msg)) {
+        return Response.json({ error: msg || "Failed to fetch video info" }, { status: 422 });
+      }
+      // bot error: try next client
     }
   }
 
   // Last resort: Piped API
-  for (const instance of PIPED_API_INSTANCES) {
-    try {
-      const resp = await fetch(`${instance}/streams/${videoId}`, {
-        headers: { "User-Agent": "PeakClipper/1.0" },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!resp.ok) continue;
-      const d = await resp.json() as { title: string; duration: number; thumbnailUrl: string; uploader: string };
-      return Response.json({ title: d.title, duration: d.duration, thumbnail: d.thumbnailUrl ?? "", channel: d.uploader ?? "Unknown", url });
-    } catch { /* try next */ }
+  if (videoId) {
+    for (const instance of PIPED_API_INSTANCES) {
+      try {
+        const resp = await fetch(`${instance}/streams/${videoId}`, {
+          headers: { "User-Agent": "PeakClipper/1.0" },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!resp.ok) continue;
+        const d = await resp.json() as { title: string; duration: number; thumbnailUrl: string; uploader: string };
+        return Response.json({ title: d.title, duration: d.duration, thumbnail: d.thumbnailUrl ?? "", channel: d.uploader ?? "Unknown", url });
+      } catch { /* try next */ }
+    }
   }
 
   return Response.json({ error: "Unable to fetch video info. Try uploading the video file directly." }, { status: 422 });

@@ -8,17 +8,27 @@ import { mergeShortSegments, parseVTT, parseSRT } from "./subtitle-parser";
 
 const TMP_DIR = "/tmp/peakclipper";
 
-// Flags applied to every yt-dlp invocation.
-// - android client: bypasses bot detection for most videos
-// - js-runtimes node: use installed Node.js for JS-based extraction
-// - cookies: optional file path via YTDLP_COOKIES_FILE env var (Netscape format)
-function ytdlpBase(): string[] {
+// YouTube player clients to try in order — different clients hit different API paths
+// and some are less aggressively blocked on datacenter IPs.
+const YTDLP_CLIENTS = [
+  "android,web",       // fast; often blocked on datacenter IPs
+  "tv_embedded,web",   // SmartTV embedded; different OAuth path, sometimes passes
+  "ios",               // iOS client; distinct token mechanism
+  "mweb",              // mobile web; lighter bot-detection
+];
+
+// Build yt-dlp base flags for a given YouTube player client index
+function ytdlpBase(clientIndex = 0): string[] {
+  const client = YTDLP_CLIENTS[clientIndex % YTDLP_CLIENTS.length];
   const base = [
     "--no-check-certificate",
-    "--extractor-args", "youtube:player_client=android,web",
-    "--js-runtimes", "node",
+    "--extractor-args", `youtube:player_client=${client}`,
     "--no-playlist",
   ];
+  // js-runtimes only helps android/web client
+  if (client.includes("android") || client.includes("web")) {
+    base.push("--js-runtimes", "node");
+  }
   const cookiesFile = process.env.YTDLP_COOKIES_FILE;
   if (cookiesFile) base.push("--cookies", cookiesFile);
   return base;
@@ -276,26 +286,39 @@ async function getVideoInfo(url: string) {
   if (videoId) {
     const oembed = await fetchOembed(videoId);
     if (oembed) {
-      const duration = await runCommand("yt-dlp", [...ytdlpBase(), "--dump-json", url])
-        .then((json) => (JSON.parse(json).duration as number) || 0)
-        .catch(() => 0); // blocked IPs return 0; ffprobe fills in actual duration later
+      // Try each client for duration; first success wins, 0 on total failure
+      let duration = 0;
+      for (let ci = 0; ci < YTDLP_CLIENTS.length; ci++) {
+        try {
+          const json = await runCommand("yt-dlp", [...ytdlpBase(ci), "--dump-json", url]);
+          duration = (JSON.parse(json).duration as number) || 0;
+          if (duration > 0) break;
+        } catch { /* try next client */ }
+      }
       return { title: oembed.title, duration, thumbnail: oembed.thumbnail, channel: oembed.channel, url };
     }
   }
 
-  // Non-YouTube or oEmbed failed: try yt-dlp directly
-  try {
-    const json = await runCommand("yt-dlp", [...ytdlpBase(), "--dump-json", url]);
-    const data = JSON.parse(json);
-    return {
-      title: data.title as string,
-      duration: data.duration as number,
-      thumbnail: (data.thumbnail || data.thumbnails?.[0]?.url || "") as string,
-      channel: (data.channel || data.uploader || "Unknown") as string,
-      url,
-    };
-  } catch (err) {
-    if (!isBotError(err instanceof Error ? err.message : "") || !videoId) throw err;
+  // Non-YouTube or oEmbed failed: try yt-dlp with each client
+  for (let ci = 0; ci < YTDLP_CLIENTS.length; ci++) {
+    try {
+      const json = await runCommand("yt-dlp", [...ytdlpBase(ci), "--dump-json", url]);
+      const data = JSON.parse(json);
+      return {
+        title: data.title as string,
+        duration: data.duration as number,
+        thumbnail: (data.thumbnail || data.thumbnails?.[0]?.url || "") as string,
+        channel: (data.channel || data.uploader || "Unknown") as string,
+        url,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (!isBotError(msg)) {
+        if (!videoId) throw err; // non-YouTube: fatal error
+        break; // YouTube non-bot error: fall through to Piped
+      }
+      // bot error: try next client
+    }
   }
 
   // Last resort for YouTube: Piped API
@@ -311,13 +334,14 @@ async function downloadViaYtdlp(
   url: string,
   destDir: string,
   jobId: string,
-  onProgress: (p: number) => void
+  onProgress: (p: number) => void,
+  clientIndex = 0
 ): Promise<string> {
   const outputTemplate = path.join(destDir, `${jobId}.%(ext)s`);
   await runCommand(
     "yt-dlp",
     [
-      ...ytdlpBase(),
+      ...ytdlpBase(clientIndex),
       "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
       "--merge-output-format", "mp4",
       "-o", outputTemplate,
@@ -441,12 +465,20 @@ async function downloadVideo(
     } catch { /* fall through */ }
   }
 
-  // Step 2: yt-dlp direct (works fine for non-YouTube or if cobalt unavailable)
-  try {
-    return await downloadViaYtdlp(url, destDir, jobId, onProgress);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "";
-    if (!isBotError(msg) || !videoId) throw err;
+  // Step 2: yt-dlp direct — try each player client in turn
+  for (let ci = 0; ci < YTDLP_CLIENTS.length; ci++) {
+    try {
+      return await downloadViaYtdlp(url, destDir, jobId, onProgress, ci);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      // Non-bot errors (network, format) shouldn't be retried with another client
+      if (!isBotError(msg)) {
+        if (!videoId) throw err; // non-YouTube: give up
+        break; // YouTube non-bot error: skip to Piped fallbacks
+      }
+      // Bot error on last client: fall through to Piped
+      if (ci < YTDLP_CLIENTS.length - 1) continue;
+    }
   }
 
   // Step 3: yt-dlp via piped.video frontend
@@ -503,20 +535,29 @@ async function extractSubtitles(
   const langs = [language, "en", "id"].filter(Boolean).join(",");
   const outputTemplate = path.join(destDir, "subs");
 
-  try {
-    await runCommand("yt-dlp", [
-      ...ytdlpBase(),
-      "--write-auto-sub",
-      "--sub-lang", langs,
-      "--sub-format", "vtt",
-      "--skip-download",
-      "-o", outputTemplate,
-      url,
-    ]);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+  let subExtracted = false;
+  for (let ci = 0; ci < YTDLP_CLIENTS.length; ci++) {
+    try {
+      await runCommand("yt-dlp", [
+        ...ytdlpBase(ci),
+        "--write-auto-sub",
+        "--sub-lang", langs,
+        "--sub-format", "vtt",
+        "--skip-download",
+        "-o", outputTemplate,
+        url,
+      ]);
+      subExtracted = true;
+      break;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!isBotError(msg)) break; // non-bot error; stop trying other clients
+      // bot error: try next client
+    }
+  }
+  if (!subExtracted) {
     const videoId = extractYouTubeId(url);
-    if (!isBotError(msg) || !videoId) return null;
+    if (!videoId) return null;
 
     // Retry via piped.video frontend
     for (let i = 0; i < PIPED_FRONTEND_HOSTS.length; i++) {
