@@ -601,6 +601,15 @@ export async function processVideo(job: Job): Promise<void> {
         const raw = subFile.endsWith(".srt") ? parseSRT(content) : parseVTT(content);
         segments = mergeShortSegments(raw);
       }
+    } else {
+      // Try to extract embedded subtitle stream from uploaded video
+      try {
+        const outPath = path.join(jobDir, "subs.vtt");
+        await runCommand("ffmpeg", ["-y", "-i", localFilePath, "-map", "0:s:0", outPath]);
+        const content = await readSubtitleFile(outPath);
+        const raw = parseVTT(content);
+        segments = mergeShortSegments(raw);
+      } catch { /* no embedded subs — interval detection will be used */ }
     }
 
     // --- Highlight detection ---
@@ -639,7 +648,7 @@ export async function processVideo(job: Job): Promise<void> {
         c.endTime,
         settings.aspectRatio,
         settings.captions,
-        c.transcript.slice(0, 120),
+        c.transcript.slice(0, 120) || c.title,
         (pct) => {
           updateJob(id, { progress: base + (pct / 100) * perClipShare });
         }
