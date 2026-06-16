@@ -563,6 +563,13 @@ export function GenerateModal({ open, onClose, videoUrl, uploadedFile, prefetche
   const closeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const jobUpdate = useJobStream(uiStep === "processing" ? jobId : null);
 
+  // Derive YouTube thumbnail instantly from URL without waiting for API
+  const quickThumbnail = React.useMemo(() => {
+    if (videoInfo?.thumbnail) return videoInfo.thumbnail;
+    const m = videoUrl?.match(/(?:v=|\/v\/|youtu\.be\/|\/embed\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+    return m ? `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg` : "";
+  }, [videoUrl, videoInfo?.thumbnail]);
+
   // Open directly to results when viewing an existing job
   React.useEffect(() => {
     if (!open) return;
@@ -643,7 +650,12 @@ export function GenerateModal({ open, onClose, videoUrl, uploadedFile, prefetche
   };
 
   const clips = viewMode?.clips ?? jobUpdate?.clips ?? [];
-  const displayVideoInfo = viewMode?.videoInfo ?? videoInfo ?? (jobUpdate?.videoInfo ?? null);
+  const rawDisplayInfo = viewMode?.videoInfo ?? videoInfo ?? (jobUpdate?.videoInfo ?? null);
+  const displayVideoInfo = rawDisplayInfo
+    ? { ...rawDisplayInfo, thumbnail: rawDisplayInfo.thumbnail || quickThumbnail }
+    : quickThumbnail
+      ? { title: "", duration: 0, thumbnail: quickThumbnail, channel: "" }
+      : null;
 
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && handleClose()}>
